@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Application</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.3/socket.io.js"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/uuid@3.4.0/dist/umd/uuidv4.min.js"></script> -->
+    <script src="https://unpkg.com/requirejs@2.3.6/require.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/uuid@3.4.0/dist/umd/uuid.min.js"></script>
+
+
+</head>
+<body>
+<div id="chat-box"></div>
+<input type="text" id="message-input" placeholder="Type your message">
+<button onclick="sendMessage()">Send</button>
+
+
+<script>
+    
+    var socket = io.connect('http://' + document.domain + ':' + location.port + '/chat');
+
+    socket.on('connect', function() {
+        console.log('Connected');
+    });
+
+    socket.on('disconnect', function() {
+        console.log('Disconnected');
+    });
+
+    socket.on('receive_message', function(data) {
+        console.log('Received message:', data);
+        displayMessage(data.sender_id, data.content);
+    });
+    
+    var UUIDv4 = new function() {
+	function generateNumber(limit) {
+	   var value = limit * Math.random();
+	   return value | 0;
+	}
+	function generateX() {
+            var value = generateNumber(16);
+            return value.toString(16);
+    }
+        function generateXes(count) {
+            var result = '';
+            for(var i = 0; i < count; ++i) {
+                result += generateX();
+            }
+            return result;
+        }
+        function generateVariant() {
+            var value = generateNumber(16);
+            var variant =  (value & 0x3) | 0x8;
+            return variant.toString(16);
+        }
+        this.generate = function() {
+            var result = generateXes(8)
+                + '-' + generateXes(4)
+                + '-' + '4' + generateXes(3)
+                + '-' + generateVariant() + generateXes(3)
+                + '-' + generateXes(12)
+            return result;
+        };
+    };
+    function sendMessage() {
+        var sender_id = UUIDv4.generate()
+        var receiver_id = UUIDv4.generate()
+        var content = document.getElementById('message-input').value;
+
+        var data = {'sender_id': sender_id, 'receiver_id': receiver_id, 'content': content};
+        socket.emit('send_message', data);
+
+        displayMessage(sender_id, content);
+
+        document.getElementById('message-input').value = '';
+    }
+
+    function displayMessage(sender, content) {
+        var chatBox = document.getElementById('chat-box');
+        chatBox.innerHTML += '<p><strong>' + sender + ':</strong> ' + content + '</p>';
+    }
+</script>
+
+</body>
+</html>

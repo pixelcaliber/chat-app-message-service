@@ -4,85 +4,74 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat Application</title>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.3/socket.io.js"></script>
-    <!-- <script src="https://cdn.jsdelivr.net/npm/uuid@3.4.0/dist/umd/uuidv4.min.js"></script> -->
-    <script src="https://unpkg.com/requirejs@2.3.6/require.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/uuid@3.4.0/dist/umd/uuid.min.js"></script>
-
-
+    <title>Messages App</title>
 </head>
 <body>
-<div id="chat-box"></div>
-<input type="text" id="message-input" placeholder="Type your message">
-<button onclick="sendMessage()">Send</button>
 
+<div id="messages-container">
+    <!-- Display messages here -->
+</div>
 
+<button id="load-more-btn">Load More</button>
 <script>
-    
-    var socket = io.connect('http://' + document.domain + ':' + location.port + '/chat');
+    localStorage.setItem('startingTimestamp', null);
+    localStorage.setItem('pagingState', null);
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
 
-    socket.on('connect', function() {
-        console.log('Connected');
-    });
+    const messagesContainer = document.getElementById('messages-container');
+    const loadMoreButton = document.getElementById('load-more-btn');
 
-    socket.on('disconnect', function() {
-        console.log('Disconnected');
-    });
+    let pagingState = localStorage.getItem('pagingState');
+    let startingTimestamp = localStorage.getItem('startingTimestamp');
+    const chat_id = "e7e21006-73fa-4969-9eb1-de899bf5cc74"
 
-    socket.on('receive_message', function(data) {
-        console.log('Received message:', data);
-        displayMessage(data.sender_id, data.content);
-    });
-    
-    var UUIDv4 = new function() {
-	function generateNumber(limit) {
-	   var value = limit * Math.random();
-	   return value | 0;
-	}
-	function generateX() {
-            var value = generateNumber(16);
-            return value.toString(16);
-    }
-        function generateXes(count) {
-            var result = '';
-            for(var i = 0; i < count; ++i) {
-                result += generateX();
+    const fetchMessages = async () => {
+        try {
+            const response = await fetch(`http://127.0.0.1:5000/users/chat/${chat_id}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    paging_state_id: pagingState || null,
+                    starting_timestamp: startingTimestamp || null,
+                    fetch_size: 5,
+                }),
+            });
+
+            const data = await response.json();
+            console.log(data)
+            
+            pagingState = data.next_paging_state_id !== undefined ? data.next_paging_state_id : null;
+            localStorage.setItem('pagingState', pagingState);
+
+            if (data && data.user_messages && data.user_messages.length > 0) {
+                
+                startingTimestamp = data.user_messages[data.user_messages.length - 1].timestamp;
+                localStorage.setItem('startingTimestamp', startingTimestamp);
+                data.user_messages.forEach(message => {
+                    const messageElement = document.createElement('div');
+                    messageElement.textContent = `message: ${message.content} delivered at: ${message.timestamp} to: ${message.message_id} by the user: ${message.sender_id}`;
+                    messagesContainer.appendChild(messageElement);
+                });
+            
             }
-            return result;
+
+            loadMoreButton.style.display = pagingState ? 'block' : 'none';
+
+        } catch (error) {
+            console.error('Error fetching messages:', error);
         }
-        function generateVariant() {
-            var value = generateNumber(16);
-            var variant =  (value & 0x3) | 0x8;
-            return variant.toString(16);
-        }
-        this.generate = function() {
-            var result = generateXes(8)
-                + '-' + generateXes(4)
-                + '-' + '4' + generateXes(3)
-                + '-' + generateVariant() + generateXes(3)
-                + '-' + generateXes(12)
-            return result;
-        };
     };
-    function sendMessage() {
-        var sender_id = UUIDv4.generate()
-        var receiver_id = UUIDv4.generate()
-        var content = document.getElementById('message-input').value;
 
-        var data = {'sender_id': sender_id, 'receiver_id': receiver_id, 'content': content};
-        socket.emit('send_message', data);
+    // Load more button click event
+    loadMoreButton.addEventListener('click', fetchMessages);
 
-        displayMessage(sender_id, content);
-
-        document.getElementById('message-input').value = '';
-    }
-
-    function displayMessage(sender, content) {
-        var chatBox = document.getElementById('chat-box');
-        chatBox.innerHTML += '<p><strong>' + sender + ':</strong> ' + content + '</p>';
-    }
+    // Initial fetch when the page loads
+    fetchMessages();
+});
 </script>
 
 </body>
