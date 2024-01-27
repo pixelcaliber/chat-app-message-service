@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const fetchMessages = async () => {
         try {
-            const response = await fetch(`http://127.0.0.1:5000/users/chat/${chat_id}`, {
+            const response = await fetch(`http://127.0.0.1/users/chat/${chat_id}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
