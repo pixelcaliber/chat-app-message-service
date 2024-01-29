@@ -1,4 +1,3 @@
-
 create_keyspace_query = """
     CREATE KEYSPACE IF NOT EXISTS chat_application_user_service
     WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
@@ -13,18 +12,18 @@ CREATE TABLE IF NOT EXISTS messages (
         timestamp TIMESTAMP,
         content TEXT,
         seen_at TIMESTAMP,
-        PRIMARY KEY ((chat_id, sender_id), timestamp, message_id)
+        PRIMARY KEY ((chat_id), timestamp, message_id)
     )
     WITH CLUSTERING ORDER BY(timestamp DESC);
 """
 
-create_index_on_sender_id = """
-CREATE INDEX IF NOT EXISTS idx_sender_id ON messages (sender_id, timestamp);
-"""
 create_index_on_chat_id = """
 CREATE INDEX IF NOT EXISTS idx_chat_id ON messages (chat_id, timestamp);
 """
 
+create_index_on_timestamp = """
+CREATE INDEX IF NOT EXISTS idx_timestamp ON messages (timestamp, message_id);
+"""
 
 create_user_chat_table_query = """
     CREATE TABLE IF NOT EXISTS user_chat (
@@ -35,4 +34,3 @@ create_user_chat_table_query = """
     PRIMARY KEY (user_id, chat_id)
 );
 """
-

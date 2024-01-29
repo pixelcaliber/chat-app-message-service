@@ -15,7 +15,8 @@ class Message:
         self.content = content
         self.timestamp = timestamp
         self.seen_at = seen_at
-        
+
+
 class GetUserMessages:
     def __init__(self, paging_state, messages):
         self.paging_state = paging_state
@@ -54,7 +55,7 @@ class MessagesService(object):
                 [uuid.UUID(chat_id)]
             )
 
-        # logging.info('Current query is: ' + str(bound_statement))
+        logging.info("Current query is: " + str(bound_statement))
 
         bound_statement.fetch_size = page_size
         result_set = None
@@ -66,7 +67,7 @@ class MessagesService(object):
         else:
             result_set = self.session.execute(bound_statement)
 
-        # logging.info(result_set)
+        logging.info(result_set)
         current_rows = result_set.current_rows
 
         remaining = len(current_rows)

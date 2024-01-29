@@ -1,6 +1,7 @@
 import logging
 import uuid
 from datetime import datetime
+from functools import lru_cache
 
 import redis
 from gevent import monkey
@@ -16,9 +17,13 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room
 
 from configs import cassandra_config
-from constants import (create_index_on_chat_id, create_index_on_sender_id,
-                       create_keyspace_query, create_message_table_query,
-                       create_user_chat_table_query)
+from constants import (
+    create_index_on_chat_id,
+    create_index_on_timestamp,
+    create_keyspace_query,
+    create_message_table_query,
+    create_user_chat_table_query,
+)
 from Models import GetUserMessages, Message, MessagesService
 from utills import FLASK_SECRET_KEY
 
@@ -34,13 +39,14 @@ cluster = Cluster(
     auth_provider=cassandra_config["auth_provider"],
 )
 
+
 session = cluster.connect()
 session.set_keyspace(cassandra_config["keyspace"])
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 
-producer_config = {'bootstrap.servers': 'localhost:9092'}
+producer_config = {"bootstrap.servers": "localhost:9092"}
 producer = Producer(producer_config)
 
 CORS(app)
@@ -49,21 +55,18 @@ CORS(app)
 # session.execute(create_message_table_query)
 # session.execute(create_index_on_sender_id)
 # session.execute(create_index_on_chat_id)
+# session.execute(create_index_on_timestamp)
 
 
 @socketio.on("connect", namespace="/chat")
 def handle_connect():
-    user_id = (
-        request.sid
-    )  # Unique identifier for the user (replace this with your authentication logic)
+    user_id = request.sid
     logging.info(f"User connected: {user_id}")
 
 
 @socketio.on("disconnect", namespace="/chat")
 def handle_disconnect():
-    user_id = (
-        request.sid
-    )  # Unique identifier for the user (replace this with your authentication logic)
+    user_id = request.sid
     logging.info(f"User disconnected: {user_id}")
 
 
@@ -120,6 +123,8 @@ def start_private_chat(data):
 
     logging.info(f"Private chat room created: {room_name}")
 
+    emit("private_chat_room_created", room_name, namespace="/chat")
+
 
 @socketio.on("send_message", namespace="/chat")
 def handle_send_message(data):
@@ -158,10 +163,8 @@ def handle_send_message(data):
         room_name = chat_id
         emit("receive_message", data["message"], room=room_name, namespace="/chat")
 
-        kafka_message = {
-            'username': sender_id
-        }
-        producer.produce('received_messages', value=json.dumps(kafka_message))
+        kafka_message = {"header": f"New message from: {sender_id}", "body": content}
+        producer.produce("received_messages", value=json.dumps(kafka_message))
         producer.flush()
         return jsonify({"message": "User chat table created", "status": 200})
 
@@ -200,18 +203,45 @@ def get_user_chats():
         if not user_id:
             return jsonify({"error": "User ID is required.", "status": 400}), 400
 
-        select_query = """
-            SELECT chat_id
-            FROM user_chat
-            WHERE user_id = %s ALLOW FILTERING;
-        """
-
-        result = session.execute(select_query, (uuid.UUID(user_id),))
-        chat_ids = [row.chat_id for row in result]
+        chat_ids = get_user_chats_cached(user_id)
         return jsonify({"chat_ids": chat_ids, "status": 200})
 
     except Exception as e:
         return jsonify({"error": str(e), "status": 500}), 500
+
+
+@lru_cache(maxsize=128)
+def get_user_chats_cached(user_id):
+    select_query = """
+        SELECT chat_id
+        FROM user_chat
+        WHERE user_id = %s ALLOW FILTERING;
+    """
+
+    result = session.execute(select_query, (uuid.UUID(user_id),))
+    return [row.chat_id for row in result]
+
+
+# @app.route("/user/update_read_receipts", methods=["GET"])
+# def get_user_chats():
+#     try:
+#         user_id = request.args.get("user_id")
+
+#         if not user_id:
+#             return jsonify({"error": "User ID is required.", "status": 400}), 400
+
+#         select_query = """
+#             SELECT chat_id
+#             FROM user_chat
+#             WHERE user_id = %s ALLOW FILTERING;
+#         """
+
+#         result = session.execute(select_query, (uuid.UUID(user_id),))
+#         chat_ids = [row.chat_id for row in result]
+#         return jsonify({"chat_ids": chat_ids, "status": 200})
+
+#     except Exception as e:
+#         return jsonify({"error": str(e), "status": 500}), 500
 
 
 @app.route("/users/chat/<chat_id>", methods=["POST"])
@@ -219,18 +249,34 @@ def get_chat_messages(chat_id):
     try:
         data = request.get_json()
         paging_state_id = data.get("paging_state_id", None)
-        starting_timestamp_str = data.get("starting_timestamp_str", None)
+        starting_timestamp_str = data.get("starting_timestamp_str")
+
         fs = data.get("fetch_size", 5)
         fetch_size = int(fs)
 
+        logging.info(f"data: {data}")
+
         logging.info(f"paging_id from the client: {paging_state_id}")
-        paging_state = redis_client.get(paging_state_id)
+        paging_state = None
+
+        if paging_state_id:
+            paging_state = redis_client.get(paging_state_id)
+
         logging.info(f"paging state from cache: {paging_state}")
 
-        timestamp_format = "%Y-%m-%d %H:%M:%S.%f%z"
+        timestamp_format = "%Y-%m-%d %H:%M:%S.%f"
 
         starting_timestamp = None
         if starting_timestamp_str:
+            # timestamp_str = "Sat, 27 Jan 2024 15:26:40 GMT"
+            # # Parse the provided timestamp string into a datetime object
+            # timestamp_obj = datetime.strptime(
+            #     starting_timestamp_str, "%a, %d %b %Y %H:%M:%S %Z"
+            # )
+
+            # # Format the datetime object into the desired format
+            # formatted_timestamp = timestamp_obj.strftime("%Y-%m-%d %H:%M:%S")
+
             starting_timestamp = datetime.strptime(
                 starting_timestamp_str, timestamp_format
             )
@@ -252,6 +298,13 @@ def get_chat_messages(chat_id):
         next_paging_state_id = str(uuid.uuid4())
         redis_client.set(next_paging_state_id, next_paging_state)
 
+        logging.info(messages)
+
+        for message in messages:
+            message["timestamp"] = message["timestamp"].strftime(
+                "%Y-%m-%d %H:%M:%S.%f%z"
+            )
+
         return (
             jsonify(
                 {
@@ -263,6 +316,7 @@ def get_chat_messages(chat_id):
         )
 
     except Exception as e:
+        logging.info(f"exception: {e}")
         return jsonify({"error": str(e), "status": 500}), 500
 
 
