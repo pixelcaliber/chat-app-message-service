@@ -9,6 +9,8 @@ Part of chat-application microservices
 
 tech-stack: Cassandra, Python, Flask, Redis, NGINX, Kafka, Firebase, Websockets
 
+### Additionally, whenever a user sends a message, we generate notification with message details using Firebase Cloud Messaging and Kafka for scalability, based on the FCM token of users' device, refer: notification service repo for more details
+- so, this service is a producer of kafka notification events, we are pushing those events into a topic for worker to consume and generate notifications on user devices upon new messages
 
 ### Cassandra
 
